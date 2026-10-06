@@ -47,6 +47,8 @@
   html{-webkit-text-size-adjust:100%;}body{overscroll-behavior-y:none;}
   button{touch-action:manipulation;}
   header{padding:6px 2px 12px;}
+  .ver{font-size:11px;letter-spacing:.06em;opacity:.55;margin-left:8px;font-weight:600;white-space:nowrap;}
+  .gate .ver{display:block;margin:14px 0 0;text-align:center;}
   .kicker{font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--gold);font-weight:700;}
   .toprow{display:flex;align-items:center;justify-content:space-between;gap:10px;}
   .refresh{border:1.5px solid var(--line);background:var(--card);color:var(--ink-soft);font-family:inherit;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:99px;cursor:pointer;transition:.2s;}
@@ -142,10 +144,11 @@
   <input type="password" id="pw" placeholder="Şifre" aria-label="Şifre">
   <div class="err" id="pwErr"></div>
   <button class="btn primary" type="submit">Giriş</button>
+  <span class="ver">v3.8</span>
 </form></div>
 <div class="wrap">
   <header>
-    <div class="toprow"><div class="kicker" id="kicker"></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
+    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v3.8</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
     <h1 id="title"></h1>
     <div class="sub" id="sub"></div>
     <div class="course"><select id="course" aria-label="Ders seç"></select></div>
@@ -161,7 +164,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v3.7
+   TARİH SINAV HAZIRLIK — v3.8
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).

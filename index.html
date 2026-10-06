@@ -144,11 +144,11 @@
   <input type="password" id="pw" placeholder="Şifre" aria-label="Şifre">
   <div class="err" id="pwErr"></div>
   <button class="btn primary" type="submit">Giriş</button>
-  <span class="ver">v3.8</span>
+  <span class="ver">v3.9</span>
 </form></div>
 <div class="wrap">
   <header>
-    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v3.8</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
+    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v3.9</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
     <h1 id="title"></h1>
     <div class="sub" id="sub"></div>
     <div class="course"><select id="course" aria-label="Ders seç"></select></div>
@@ -164,7 +164,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v3.8
+   TARİH SINAV HAZIRLIK — v3.9
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).
@@ -3296,13 +3296,14 @@ const QUESTIONS = [
 let course=COURSES[0].id, mode="test", unit=-1, idx=0, order=[], answers={}, answered={};
 const ROUND=20;              // her test turu en çok 20 soru (sınav gibi)
 const app=document.getElementById("app"), subEl=document.getElementById("sub");
-const BYID={};QUESTIONS.forEach(q=>BYID[q.id]=q);
+const BYID={};QUESTIONS.forEach(q=>{BYID[q.id]=q;let h=5381;const s=q.d+"|"+q.q+"|"+Object.values(q.o).join("|");for(let i=0;i<s.length;i++)h=((h*33)^s.charCodeAt(i))>>>0;q.k=h.toString(36);});  /* q.k: sürümler arası sabit anahtar */
 /* kalıcı kayıt: son ders + yanlışlar (telefonda kapatıp açınca kalır) */
 const LS="tarih-sinav-v3";
-let saved={course:null,wrong:{}};
+let saved={course:null,wrong:{},seen:{}};
 try{const s=JSON.parse(localStorage.getItem(LS)||"null");if(s&&typeof s==="object")saved=Object.assign(saved,s);}catch(e){}
 function save(){try{localStorage.setItem(LS,JSON.stringify(saved));}catch(e){}}
 if(saved.course&&COURSES.some(c=>c.id===saved.course))course=saved.course;
+if(!saved.seen||typeof saved.seen!=="object")saved.seen={};
 
 function C(){return COURSES.find(c=>c.id===course);}
 function gname(u){const g=C().groups.find(g=>g[0]===u);return g?(g[2]||g[1]):"";}
@@ -3312,7 +3313,8 @@ function chipName(u){const ch=(C().chips||[]).find(x=>x[0]===u);return ch?ch[1]:
 function pool(){const p=coursePool();return p.filter(q=>inUnit(q,unit));}
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));const t=a[i];a[i]=a[j];a[j]=t;}return a;}
 /* test turu: havuzdan karışık en çok 20 soru */
-function startRound(){order=shuffle(pool().map(q=>q.id)).slice(0,ROUND);idx=0;order.forEach(id=>{delete answers[id];delete answered[id];});}
+/* şık işaretlenen soru, bölümdeki tüm sorular cevaplanmadan tekrar gelmez; hepsi bitince ikinci tur başlar */
+function startRound(){const p=pool();let fresh=p.filter(q=>!saved.seen[q.k]);if(!fresh.length){p.forEach(q=>delete saved.seen[q.k]);save();fresh=p;}order=shuffle(fresh.map(q=>q.id)).slice(0,ROUND);idx=0;order.forEach(id=>{delete answers[id];delete answered[id];});}
 function answeredInRound(){return order.filter(id=>answered[id]).length;}
 function roundRight(){return order.filter(id=>answers[id]===BYID[id].c).length;}
 /* NET PUANLAMA: her doğru +5, 4 yanlış 1 doğruyu götürür, boş etkilemez */
@@ -3370,8 +3372,8 @@ function renderTest(){
     ${last?`<button class="btn primary" onclick="finish()">Sonucu Gör</button>`:`<button class="btn primary" onclick="next()">${isAns?"Sıradaki":"Atla"} ›</button>`}</div></div>`;
 }
 function pick(k){const q=BYID[order[idx]];if(answered[q.id])return;answers[q.id]=k;answered[q.id]=true;
-  if(k!==q.c)saved.wrong[q.id]=1;else delete saved.wrong[q.id];save();
-  renderTest();if(order.length&&order.every(id=>answered[id]))setTimeout(finish,700);}
+  if(k!==q.c)saved.wrong[q.id]=1;else delete saved.wrong[q.id];saved.seen[q.k]=1;save();  /* şık işaretlenen soru döngü bitene dek tekrar gelmez */
+  renderTest();updateSub();if(order.length&&order.every(id=>answered[id]))setTimeout(finish,700);}
 function next(){if(idx<order.length-1){idx++;renderTest();}}
 function prev(){if(idx>0){idx--;renderTest();}}
 
@@ -3414,8 +3416,8 @@ function render(){
   updateSub();
 }
 function updateSub(){
-  const n=pool().length;
-  subEl.textContent = mode==="study"?`${n} soru · cevap anahtarı`:mode==="review"?`Yanlış cevapladıkların · ${wrongList().length} soru`:`${n} soru · ${unit?chipName(unit):C().scope}`;
+  const p=pool(), n=p.length, gor=p.filter(q=>saved.seen[q.k]).length;
+  subEl.textContent = mode==="study"?`${n} soru · cevap anahtarı`:mode==="review"?`Yanlış cevapladıkların · ${wrongList().length} soru`:`${n} soru · ${unit?chipName(unit):C().scope} · ${gor} görüldü`;
 }
 function setMode(m){
   mode=m;

@@ -161,7 +161,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v3.6
+   TARİH SINAV HAZIRLIK — v3.7
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).
@@ -3290,7 +3290,7 @@ const QUESTIONS = [
 ];
 
 /* ============ STATE ============ */
-let course=COURSES[0].id, mode="test", unit=0, idx=0, order=[], answers={}, answered={};
+let course=COURSES[0].id, mode="test", unit=-1, idx=0, order=[], answers={}, answered={};
 const ROUND=20;              // her test turu en çok 20 soru (sınav gibi)
 const app=document.getElementById("app"), subEl=document.getElementById("sub");
 const BYID={};QUESTIONS.forEach(q=>BYID[q.id]=q);
@@ -3327,7 +3327,7 @@ function renderHeader(){
 }
 const courseEl=document.getElementById("course");
 courseEl.innerHTML=COURSES.map(c=>`<option value="${c.id}">${c.name} · ${QUESTIONS.filter(q=>q.d===c.id).length} soru</option>`).join("");
-courseEl.addEventListener("change",()=>{course=courseEl.value;saved.course=course;save();unit=0;startRound();renderHeader();renderUnits();setMode("test");});
+courseEl.addEventListener("change",()=>{course=courseEl.value;saved.course=course;save();unit=-1;startRound();renderHeader();renderUnits();setMode("test");});
 
 /* unit chips */
 const unitsEl=document.getElementById("units");

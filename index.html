@@ -132,6 +132,17 @@
   .gate input:focus{outline:2px solid var(--gold);outline-offset:1px;}
   .gate .err{color:var(--red);font-size:12.5px;font-weight:700;min-height:18px;margin-bottom:6px;}
   .gate button{width:100%;}
+  .lctl{display:flex;gap:10px;margin:14px 0 4px;}
+  .lctl .btn.ghost{width:58px;font-size:19px;}
+  .card.live{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-soft),var(--shadow);}
+  .lset{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 14px;margin-top:14px;}
+  .lrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:7px 0;}
+  .lrow>span{font-size:11px;font-weight:800;color:var(--muted);min-width:78px;text-transform:uppercase;letter-spacing:.05em;}
+  .lrow button{border:1px solid var(--line);background:var(--paper);font-family:inherit;font-weight:700;font-size:12px;color:var(--ink-soft);padding:6px 11px;border-radius:99px;cursor:pointer;}
+  .lrow button.on{background:var(--gold);color:#fff;border-color:var(--gold);}
+  .lrow select{flex:1;min-width:0;font-family:inherit;font-size:13px;font-weight:600;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink);}
+  .lnote{font-size:12px;color:var(--muted);line-height:1.5;margin:10px 2px 0;}
+  .lwarn{background:var(--red-bg);border:1px solid var(--no-line);border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.45;margin-top:12px;}
   .empty{text-align:center;color:var(--muted);padding:46px 20px;}
   .empty .big{font-family:'Fraunces',serif;font-size:38px;color:var(--gold-soft);}
 </style>
@@ -144,11 +155,11 @@
   <input type="password" id="pw" placeholder="Şifre" aria-label="Şifre">
   <div class="err" id="pwErr"></div>
   <button class="btn primary" type="submit">Giriş</button>
-  <span class="ver">v4.3</span>
+  <span class="ver">v4.4</span>
 </form></div>
 <div class="wrap">
   <header>
-    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v4.3</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
+    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v4.4</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
     <h1 id="title"></h1>
     <div class="sub" id="sub"></div>
     <div class="course"><select id="course" aria-label="Ders seç"></select></div>
@@ -156,6 +167,7 @@
       <button data-mode="test" class="on">Test Modu</button>
       <button data-mode="study">Çalışma</button>
       <button data-mode="review">Yanlışlar</button>
+      <button data-mode="listen">Dinle</button>
     </div>
     <div class="units" id="units"></div>
   </header>
@@ -164,7 +176,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v4.3
+   TARİH SINAV HAZIRLIK — v4.4
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).
@@ -4407,13 +4419,16 @@ function renderList(list,emptyMsg,isReview){
   html+=`</div>`;app.innerHTML=html;
 }
 function render(){
-  if(mode==="test")renderTest();
+  if(mode!=="listen"&&L.playing)lStop();
+  if(mode==="listen")renderListen();
+  else if(mode==="test")renderTest();
   else if(mode==="study")renderList(pool(),"Bu bölümde soru yok.");
   else renderList(wrongList(),"Bu derste henüz yanlışın yok. Test modunda çöz.",true);
   updateSub();
 }
 function updateSub(){
   const p=pool(), n=p.length, gor=p.filter(q=>saved.seen[q.k]).length;
+  if(mode==="listen"){const lp=lPool();subEl.textContent=`${lp.length} soru · sesli dinleme · ${lp.filter(q=>saved.heard[q.k]).length} dinlendi`;return;}
   subEl.textContent = mode==="study"?`${n} soru · cevap anahtarı`:mode==="review"?`Yanlış cevapladıkların · ${wrongList().length} soru`:`${n} soru · ${unit?chipName(unit):C().scope} · ${gor} görüldü`;
 }
 function setMode(m){
@@ -4424,6 +4439,94 @@ function setMode(m){
   render();window.scrollTo({top:0,behavior:"smooth"});
 }
 document.querySelectorAll("#tabs button").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.mode)));
+
+/* DİNLE (v4.4): soru + şıklar okunur, düşünme arası, cevap söylenir, sıradakine geçer (Web Speech API).
+   Bekleme Web Audio sessizliğiyle yapılır: sekme arka plandayken tarayıcı setTimeout'u dakikalarca geciktirebiliyor. */
+const TTS=window.speechSynthesis||null;
+saved.tts=Object.assign({rate:1,opts:1,wait:4,src:"pool",voice:""},saved.tts||{});
+if(!saved.heard||typeof saved.heard!=="object")saved.heard={};
+let L={sig:"",q:[],i:0,playing:false,phase:"q",token:0};
+let actx=null;
+function lPool(){return saved.tts.src==="wrong"?wrongList():pool();}
+function lBuild(){const p=lPool();let fresh=p.filter(q=>!saved.heard[q.k]);if(!fresh.length){p.forEach(q=>delete saved.heard[q.k]);save();fresh=p;}L.q=shuffle(fresh.map(q=>q.id));L.i=0;L.phase="q";}
+function trVoices(){if(!TTS)return[];const n=v=>/natural|online|neural/i.test(v.name)?1:0;return TTS.getVoices().filter(v=>/^tr/i.test(v.lang)).sort((a,b)=>n(b)-n(a));}
+function voiceObj(){const vs=trVoices();return vs.find(v=>v.name===saved.tts.voice)||vs[0]||null;}
+const ROMO={I:"birinci",II:"ikinci",III:"üçüncü",IV:"dördüncü",V:"beşinci",VI:"altıncı",VII:"yedinci",VIII:"sekizinci",IX:"dokuzuncu",X:"onuncu",XI:"on birinci",XII:"on ikinci",XIII:"on üçüncü",XIV:"on dördüncü",XV:"on beşinci",XVI:"on altıncı",XVII:"on yedinci",XVIII:"on sekizinci",XIX:"on dokuzuncu",XX:"yirminci"};
+const ROMC={I:"bir",II:"iki",III:"üç",IV:"dört",V:"beş",VI:"altı",VII:"yedi",VIII:"sekiz",IX:"dokuz",X:"on"};
+const NL="A-Za-zÇĞİÖŞÜçğıöşüÂÎÛâîû";
+function clean(h){const d=document.createElement("div");d.innerHTML=h;let s=d.textContent||"";
+  s=s.replace(/M\.\s?Ö\./g,"milattan önce").replace(/M\.\s?S\./g,"milattan sonra").replace(/(\d+)\s*\.?\s*yy\.?/g,"$1. yüzyıl").replace(/\bvb\./g,"ve benzeri").replace(/\bvs\./g,"vesaire");
+  s=s.replace(new RegExp("(^|[^"+NL+"])([IVX]{1,5})\\.(?=\\s|$|[A-ZÇĞİÖŞÜ])","g"),(m,a,r)=>a+(ROMO[r]?ROMO[r]+" ":m.slice(a.length)));   /* II. Mehmed → ikinci Mehmed */
+  s=s.replace(new RegExp("(^|[^"+NL+"])([IVX]{1,4})(?=$|[^"+NL+".])","g"),(m,a,r)=>a+(ROMC[r]||r));                          /* I ve III → bir ve üç */
+  return s.replace(/_{2,}|\.{4,}|…+/g," boşluk ").replace(/\s+/g," ").trim();}
+function chunks(t){const out=[];t.split(/(?<=[.!?;:])\s+/).forEach(p=>{while(p.length>220){let c=p.lastIndexOf(",",220);if(c<60)c=p.lastIndexOf(" ",220);if(c<1)c=220;out.push(p.slice(0,c+1));p=p.slice(c+1).trim();}if(p)out.push(p);});return out;}
+/* L.u: konuşulan cümle global tutulur (yoksa tarayıcı çöpe atıp onend'i hiç çağırmıyor); bekçi: konuşma bitti ama onend gelmediyse devam */
+function say(text,tok){return new Promise(res=>{const parts=chunks(text);let n=0;
+  const nx=()=>{if(tok!==L.token)return res(false);if(n>=parts.length)return res(true);
+    const u=new SpeechSynthesisUtterance(parts[n++]);L.u=u;u.lang="tr-TR";const v=voiceObj();if(v)u.voice=v;u.rate=saved.tts.rate;
+    let fired=false,idle=0;const fin=()=>{if(fired)return;fired=true;nx();};u.onend=fin;u.onerror=fin;
+    const dog=()=>{if(fired)return;if(tok!==L.token)return fin();idle=(TTS.speaking||TTS.pending)?0:idle+1;if(idle>=2)fin();else setTimeout(dog,1000);};
+    TTS.speak(u);setTimeout(dog,1500);};nx();});}
+function pause(ms,tok){return new Promise(res=>{const done=()=>res(tok===L.token);
+  if(!actx||ms<=0)return ms>0?setTimeout(done,ms):done();
+  const s=actx.createBufferSource();s.buffer=actx.createBuffer(1,Math.max(1,Math.round(actx.sampleRate*ms/1000)),actx.sampleRate);s.connect(actx.destination);s.onended=done;s.start();});}
+async function lPlay(){
+  if(!TTS)return;
+  try{if(!actx){const AC=window.AudioContext||window.webkitAudioContext;if(AC)actx=new AC();}if(actx&&actx.state==="suspended")actx.resume();}catch(e){actx=null;}
+  const tok=++L.token;L.playing=true;TTS.cancel();if(!await pause(80,tok))return;
+  while(tok===L.token){
+    if(L.i>=L.q.length){lBuild();if(!L.q.length)break;}
+    const q=BYID[L.q[L.i]];L.phase="q";renderListen();
+    if(!await say(`Soru ${L.i+1}, ${clean(q.q)}`,tok))return;
+    if(saved.tts.opts)for(const k of ["a","b","c","d","e"]){if(q.o[k]&&!await say(`${k.toUpperCase()}, ${clean(q.o[k])}.`,tok))return;}
+    if(!await pause(saved.tts.wait*1000,tok))return;
+    L.phase="a";renderListen();
+    if(!await say(`Cevap ${q.c.toUpperCase()}. ${clean(q.o[q.c])}.`,tok))return;
+    if(q.ex&&!/^\s*cevap\b/i.test(clean(q.ex))&&!await say(clean(q.ex),tok))return;  /* "Cevap : B) ..." açıklaması tekrar okunmaz */
+    saved.heard[q.k]=1;save();updateSub();
+    if(!await pause(1300,tok))return;
+    L.i++;
+  }
+  L.playing=false;if(mode==="listen")renderListen();
+}
+function lStop(){L.token++;L.playing=false;if(TTS)TTS.cancel();}
+function lToggle(){if(L.playing){lStop();renderListen();}else lPlay();}
+function lJump(d){const p=L.playing;lStop();L.i=Math.max(0,L.i+d);L.phase="q";if(L.i>=L.q.length)lBuild();if(p)lPlay();else renderListen();}
+function lSet(k,v){saved.tts[k]=v;save();if(k==="src"){lStop();L.sig="";}renderListen();}
+function renderListen(){
+  if(mode!=="listen")return;
+  const sig=course+"|"+unit+"|"+saved.tts.src;
+  if(sig!==L.sig){lStop();lBuild();L.sig=sig;}
+  if(L.i>=L.q.length&&L.q.length)L.i=L.q.length-1;
+  const T=saved.tts;
+  const chip=(k,v,l)=>`<button class="${T[k]===v?"on":""}" onclick='lSet("${k}",${JSON.stringify(v)})'>${l}</button>`;
+  const vs=trVoices();
+  const sets=`<div class="lset">
+    <div class="lrow"><span>Hız</span>${[0.8,1,1.2,1.4,1.7].map(r=>chip("rate",r,r+"×")).join("")}</div>
+    <div class="lrow"><span>Şıklar</span>${chip("opts",1,"Oku")}${chip("opts",0,"Okuma (hızlı)")}</div>
+    <div class="lrow"><span>Düşünme</span>${[0,2,4,7,10].map(w=>chip("wait",w,w+" sn")).join("")}</div>
+    <div class="lrow"><span>Kaynak</span>${chip("src","pool","Seçili bölüm")}${chip("src","wrong","Yanlışlarım")}</div>
+    ${vs.length>1?`<div class="lrow"><span>Ses</span><select onchange='lSet("voice",this.value)'>${vs.map(v=>`<option ${v===voiceObj()?"selected":""}>${v.name}</option>`).join("")}</select></div>`:""}
+  </div>`;
+  const warn=!TTS?`<div class="lwarn">Bu tarayıcı sesli okumayı desteklemiyor. Bilgisayarda <b>Microsoft Edge</b> veya Chrome ile açın.</div>`
+    :!vs.length?`<div class="lwarn">Bu tarayıcıda <b>Türkçe ses</b> bulunamadı; okuma bozuk çıkabilir. Bilgisayarda en iyi sonuç <b>Microsoft Edge</b> ile alınır (Emel / Ahmet doğal sesleri).</div>`:"";
+  if(!L.q.length){app.innerHTML=`<div class="screen empty"><div class="big">✦</div><p>${T.src==="wrong"?"Bu bölümde yanlışın yok. Kaynağı “Seçili bölüm” yap.":"Bu bölümde soru yok."}</p></div>${sets}`;updateSub();return;}
+  const q=BYID[L.q[L.i]], ans=L.phase==="a";
+  let opts="";
+  for(const k of ["a","b","c","d","e"]){if(!q.o[k])continue;opts+=`<button class="opt ${ans?(k===q.c?"correct":"dim"):""}" disabled><span class="lab">${k}</span><span>${q.o[k]}</span></button>`;}
+  app.innerHTML=`<div class="screen">
+    <div class="lctl"><button class="btn ghost" onclick="lJump(-1)" ${L.i===0?"disabled":""} title="Önceki (←)">⏮</button>
+      <button class="btn primary" onclick="lToggle()">${L.playing?"⏸ Durdur":"▶ "+(L.i||L.phase==="a"?"Devam et":"Dinlemeye başla")}</button>
+      <button class="btn ghost" onclick="lJump(1)" title="Sonraki (→)">⏭</button></div>
+    <div class="qmeta"><span class="qnum">Soru ${L.i+1} / ${L.q.length}</span><span class="utag">${gname(q.u)}</span></div>
+    <div class="card ${L.playing?"live":""}"><p class="qtext">${q.q}</p>${opts}${ans&&q.ex?`<div class="explain ok">${q.ex}</div>`:""}</div>
+    ${warn}${sets}
+    <p class="lnote">Soru ve şıklar okunur, düşünme süresi kadar beklenir, sonra cevap söylenir ve sıradaki soruya geçilir. Sekme arka planda kalsa da okumaya devam eder. Durdurup devam edince o soru baştan okunur. Kısayollar: <b>Boşluk</b> başlat/durdur, <b>← →</b> önceki/sonraki.</p></div>`;
+  updateSub();
+}
+if(TTS&&TTS.addEventListener)TTS.addEventListener("voiceschanged",()=>{if(mode==="listen"&&!L.playing)renderListen();});
+document.addEventListener("keydown",e=>{if(mode!=="listen"||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||!document.getElementById("gate").hidden)return;
+  if(e.code==="Space"){e.preventDefault();lToggle();}else if(e.key==="ArrowRight")lJump(1);else if(e.key==="ArrowLeft"&&L.i>0)lJump(-1);});
 
 (function(){courseEl.value=course;renderHeader();renderUnits();startRound();setMode("test");})();
 

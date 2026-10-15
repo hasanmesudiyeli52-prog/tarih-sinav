@@ -144,6 +144,7 @@
   .lnote{font-size:12px;color:var(--muted);line-height:1.5;margin:10px 2px 0;}
   .lwarn{background:var(--red-bg);border:1px solid var(--no-line);border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.45;margin-top:12px;}
   .empty{text-align:center;color:var(--muted);padding:46px 20px;}
+  .updbar{position:sticky;top:0;z-index:40;display:block;width:100%;border:0;background:var(--gold);color:#fff;font-family:inherit;font-weight:800;font-size:14px;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;cursor:pointer;}
   .empty .big{font-family:'Fraunces',serif;font-size:38px;color:var(--gold-soft);}
 </style>
 </head>
@@ -155,11 +156,11 @@
   <input type="password" id="pw" placeholder="Şifre" aria-label="Şifre">
   <div class="err" id="pwErr"></div>
   <button class="btn primary" type="submit">Giriş</button>
-  <span class="ver">v4.4</span>
+  <span class="ver">v4.5</span>
 </form></div>
 <div class="wrap">
   <header>
-    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v4.4</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
+    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v4.5</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
     <h1 id="title"></h1>
     <div class="sub" id="sub"></div>
     <div class="course"><select id="course" aria-label="Ders seç"></select></div>
@@ -176,7 +177,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v4.4
+   TARİH SINAV HAZIRLIK — v4.5
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).
@@ -4527,6 +4528,24 @@ function renderListen(){
 if(TTS&&TTS.addEventListener)TTS.addEventListener("voiceschanged",()=>{if(mode==="listen"&&!L.playing)renderListen();});
 document.addEventListener("keydown",e=>{if(mode!=="listen"||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||!document.getElementById("gate").hidden)return;
   if(e.code==="Space"){e.preventDefault();lToggle();}else if(e.key==="ArrowRight")lJump(1);else if(e.key==="ArrowLeft"&&L.i>0)lJump(-1);});
+
+/* v4.5 otomatik güncelleme: telefon eski sayfayı önbellekten açabiliyor. version.txt (birkaç bayt) önbelleksiz okunur;
+   açılışta yeni sürüm varsa sayfa ?v= ile yenilenir, uygulamaya geri dönülünce (test yarıda kalmasın diye) üstte "Güncelle" şeridi çıkar. */
+const VER="v4.5";
+function checkUpdate(auto){
+  if(!/^https?:/.test(location.protocol))return;
+  fetch("version.txt?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.text():"").then(t=>{
+    const v=t.trim();if(!/^v[\d.]+$/.test(v)||v===VER)return;
+    const go=()=>location.replace(location.pathname+"?v="+v.replace(/\D/g,""));
+    let tried=null;try{tried=sessionStorage.getItem("upd-"+v);}catch(e){}
+    if(auto&&!tried){try{sessionStorage.setItem("upd-"+v,"1");}catch(e){}go();return;}
+    if(document.getElementById("updbar"))return;
+    const b=document.createElement("button");b.id="updbar";b.className="updbar";b.textContent="Yeni sürüm var ("+v+") — güncellemek için dokun";b.onclick=go;document.body.prepend(b);
+  }).catch(()=>{});
+}
+checkUpdate(true);
+let lastChk=Date.now();
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-lastChk>60000){lastChk=Date.now();checkUpdate(false);}});
 
 (function(){courseEl.value=course;renderHeader();renderUnits();startRound();setMode("test");})();
 

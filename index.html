@@ -156,11 +156,11 @@
   <input type="password" id="pw" placeholder="Şifre" aria-label="Şifre">
   <div class="err" id="pwErr"></div>
   <button class="btn primary" type="submit">Giriş</button>
-  <span class="ver">v4.10</span>
+  <span class="ver">v5.0</span>
 </form></div>
 <div class="wrap">
   <header>
-    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v4.10</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
+    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v5.0</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
     <h1 id="title"></h1>
     <div class="sub" id="sub"></div>
     <div class="course"><select id="course" aria-label="Ders seç"></select></div>
@@ -177,7 +177,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v4.10
+   TARİH SINAV HAZIRLIK — v5.0
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).
@@ -4445,6 +4445,7 @@ document.querySelectorAll("#tabs button").forEach(b=>b.addEventListener("click",
    Bekleme Web Audio sessizliğiyle yapılır: sekme arka plandayken tarayıcı setTimeout'u dakikalarca geciktirebiliyor. */
 const TTS=window.speechSynthesis||null;
 saved.tts=Object.assign({rate:1,opts:1,wait:4,src:"pool",voice:""},saved.tts||{});
+if(!saved.tts.rec1){saved.tts.voice="__rec";saved.tts.rec1=1;}
 if(!saved.heard||typeof saved.heard!=="object")saved.heard={};
 let L={sig:"",q:[],i:0,playing:false,phase:"q",token:0,blocked:0,err:false};
 let actx=null;
@@ -4489,17 +4490,49 @@ function pause(ms,tok){return new Promise(res=>{let fin=false;const done=()=>{if
   if(!actx||ms<=0||actx.state!=="running")return ms>0?setTimeout(done,ms):done();
   setTimeout(done,ms+1500);  /* yedek: telefon ses bağlamını askıya alırsa onended gelmez */
   try{const s=actx.createBufferSource();s.buffer=actx.createBuffer(1,Math.max(1,Math.round(actx.sampleRate*ms/1000)),actx.sampleRate);s.connect(actx.destination);s.onended=done;s.start();}catch(e){setTimeout(done,ms);}});}
+/* v5.0 KAYITLI SES: iPhone/Android tarayıcıları Edge'in Emel sesine erişemiyor → sorular önceden Emel ile kaydedildi
+   (audio/aNN.mp3 paketleri + audio/index.json; üretim: Vize PDF\tts_emel). Tek <audio> öğesi hiç durmadan bölgeden bölgeye atlar;
+   düşünme arası paketin başındaki sessizlikte çalınır → iPhone kilit ekranında da ses oturumu kopmaz. */
+let REC=null,AU=null;
+const SIL_URL=URL.createObjectURL(new Blob([(()=>{const b=new Uint8Array(144*20);for(let i=0;i<20;i++)b.set([0xff,0xf3,0x64,0xc4],i*144);return b;})()],{type:"audio/mpeg"}));
+function recLoad(){if(REC!==null)return;REC=false;fetch("audio/index.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(j=>{if(j&&j.q){REC=j;if(mode==="listen"&&!L.playing)renderListen();}}).catch(()=>{});}
+function hasNatural(){return trVoices().some(v=>/natural|online|neural/i.test(v.name));}
+function useRec(){return !!REC&&(saved.tts.voice==="__rec"||saved.tts.voice===""||!TTS);}
+function recSeg(fi,a,b,tok){return new Promise(res=>{
+  const url="audio/"+REC.files[fi],F=REC.frame,t0=a*F,t1=b*F+0.1;let done=false,iv=0,last=-1,still=0;
+  const fin=ok=>{if(done)return;done=true;clearInterval(iv);AU.removeEventListener("timeupdate",chk);AU.removeEventListener("error",bad);res(ok&&tok===L.token);};
+  const chk=()=>{if(tok!==L.token)return fin(false);if(AU.currentTime>=t1)fin(true);};
+  const bad=()=>{if(tok===L.token){L.err=true;lStop();renderListen();}fin(false);};
+  AU.addEventListener("timeupdate",chk);AU.addEventListener("error",bad);
+  const go=()=>{try{AU.currentTime=t0;}catch(e){}AU.playbackRate=saved.tts.rate;const p=AU.play();if(p&&p.catch)p.catch(e=>{if(e&&e.name==="NotAllowedError")bad();});};
+  if(AU.src.indexOf(url)<0){AU.src=url;AU.addEventListener("loadedmetadata",go,{once:true});AU.load();}else go();
+  iv=setInterval(()=>{chk();if(done)return;still=AU.currentTime===last?still+1:0;last=AU.currentTime;if(still>400)bad();},50);   /* 20 sn ilerlemiyorsa: ağ/izin sorunu */
+});}
+async function recQuestion(q,r,tok){
+  const fr=s=>Math.max(1,Math.round(s*saved.tts.rate/REC.frame));
+  if(!await recSeg(r[0],r[1],saved.tts.opts&&r[4]?r[4]:r[2],tok))return false;         /* soru (+ şıklar, arada boşlukla kesintisiz) */
+  if(saved.tts.wait&&!await recSeg(r[0],0,fr(saved.tts.wait),tok))return false;            /* düşünme: paket başı sessizlik */
+  L.phase="a";renderListen();
+  if(!await recSeg(r[0],r[5],r[8]||r[6],tok))return false;                                 /* cevap (+ açıklama) */
+  return await recSeg(r[0],0,fr(1.3),tok);
+}
+function mediaSession(q){try{if(!("mediaSession" in navigator))return;navigator.mediaSession.metadata=new MediaMetadata({title:`Soru ${L.i+1} / ${L.q.length}`,artist:C().name||"Tarih Sınav",album:"Dinle"});
+  const ms=navigator.mediaSession;ms.setActionHandler("play",()=>{if(!L.playing)lPlay();});ms.setActionHandler("pause",()=>{lStop();renderListen();});ms.setActionHandler("nexttrack",()=>lJump(1));ms.setActionHandler("previoustrack",()=>lJump(-1));}catch(e){}}
 async function lPlay(){
-  if(!TTS)return;
+  const rec=useRec();
+  if(!TTS&&!rec)return;
   try{if(!actx){const AC=window.AudioContext||window.webkitAudioContext;if(AC)actx=new AC();}if(actx&&actx.state==="suspended")actx.resume();}catch(e){actx=null;}
   /* v4.6: mobil (özellikle iOS) speak()'i yalnız dokunuşun içinde izin veriyor → kilit açıcı boş cümle hemen, ilk soru beklemesiz */
   L.err=false;L.blocked=0;
-  const tok=++L.token;L.playing=true;TTS.cancel();
-  try{const w=new SpeechSynthesisUtterance(" ");w.volume=0;w.lang="tr-TR";L.w=w;TTS.speak(w);}catch(e){}
-  if(TTS.paused)TTS.resume();
+  const tok=++L.token;L.playing=true;if(TTS)TTS.cancel();
+  if(rec){if(!AU){AU=new Audio();AU.preload="auto";AU.setAttribute("playsinline","");}AU.src=SIL_URL;const p=AU.play();if(p&&p.catch)p.catch(()=>{});}   /* dokunuş içinde kilit aç */
+  else{try{const w=new SpeechSynthesisUtterance(" ");w.volume=0;w.lang="tr-TR";L.w=w;TTS.speak(w);}catch(e){}if(TTS.paused)TTS.resume();}
   while(tok===L.token){
     if(L.i>=L.q.length){lBuild();if(!L.q.length)break;}
-    const q=BYID[L.q[L.i]];L.phase="q";renderListen();
+    const q=BYID[L.q[L.i]];L.phase="q";renderListen();mediaSession(q);
+    const r=rec&&REC.q[q.k];
+    if(r){if(!await recQuestion(q,r,tok))return;saved.heard[q.k]=1;save();updateSub();L.i++;continue;}
+    if(!TTS){L.i++;continue;}                                                                  /* kaydı olmayan yeni soru, cihaz sesi de yok */
     if(!await say(`Soru ${L.i+1}, ${clean(q.q)}`,tok))return;
     if(saved.tts.opts)for(const k of ["a","b","c","d","e"]){if(q.o[k]&&!await say(`${k.toUpperCase()}, ${optText(k,q.o[k])}.`,tok))return;}
     if(!await pause(saved.tts.wait*1000,tok))return;
@@ -4512,12 +4545,13 @@ async function lPlay(){
   }
   L.playing=false;if(mode==="listen")renderListen();
 }
-function lStop(){L.token++;L.playing=false;if(TTS)TTS.cancel();}
+function lStop(){L.token++;L.playing=false;if(TTS)TTS.cancel();if(AU)AU.pause();}
 function lToggle(){if(L.playing){lStop();renderListen();}else lPlay();}
 function lJump(d){const p=L.playing;lStop();L.i=Math.max(0,L.i+d);L.phase="q";if(L.i>=L.q.length)lBuild();if(p)lPlay();else renderListen();}
 function lSet(k,v){saved.tts[k]=v;save();if(k==="src"){lStop();L.sig="";}renderListen();}
 function renderListen(){
   if(mode!=="listen")return;
+  recLoad();
   const sig=course+"|"+unit+"|"+saved.tts.src;
   if(sig!==L.sig){lStop();lBuild();L.sig=sig;}
   if(L.i>=L.q.length&&L.q.length)L.i=L.q.length-1;
@@ -4529,9 +4563,10 @@ function renderListen(){
     <div class="lrow"><span>Şıklar</span>${chip("opts",1,"Oku")}${chip("opts",0,"Okuma (hızlı)")}</div>
     <div class="lrow"><span>Düşünme</span>${[0,2,4,7,10].map(w=>chip("wait",w,w+" sn")).join("")}</div>
     <div class="lrow"><span>Kaynak</span>${chip("src","pool","Seçili bölüm")}${chip("src","wrong","Yanlışlarım")}</div>
-    ${vs.length>1?`<div class="lrow"><span>Ses</span><select onchange='lSet("voice",this.value)'>${vs.map(v=>`<option ${v===voiceObj()?"selected":""}>${v.name}</option>`).join("")}</select></div>`:""}
+    ${vs.length+(REC?1:0)>1?`<div class="lrow"><span>Ses</span><select onchange='lSet("voice",this.value)'>${REC?`<option value="__rec" ${useRec()?"selected":""}>Emel (kayıtlı ses, telefonda da aynı)</option>`:""}${vs.map(v=>`<option ${!useRec()&&v===voiceObj()?"selected":""}>${v.name}</option>`).join("")}</select></div>`:""}
   </div>`;
-  const warn=L.err?`<div class="lwarn"><b>Ses çalınamadı.</b> Kontrol edin: telefonun <b>medya sesi</b> açık mı (ses tuşuna basınca “medya” çubuğu)? iPhone'da yandaki <b>sessiz anahtarı</b> kapalı mı? Android'de <b>Ayarlar → Metin okuma (TTS) çıkışı</b>: “Google Konuşma Hizmetleri” seçili ve Türkçe ses indirilmiş mi? Sonra ▶'ye tekrar basın.</div>`
+  const warn=useRec()&&L.err?`<div class="lwarn"><b>Kayıtlı ses çalınamadı.</b> İnternet bağlantınızı kontrol edin; iPhone'da yandaki <b>sessiz anahtarı</b> kapalı ve medya sesi açık olsun. Sonra ▶'ye tekrar basın.</div>`
+    :useRec()?"":L.err?`<div class="lwarn"><b>Ses çalınamadı.</b> Kontrol edin: telefonun <b>medya sesi</b> açık mı (ses tuşuna basınca “medya” çubuğu)? iPhone'da yandaki <b>sessiz anahtarı</b> kapalı mı? Android'de <b>Ayarlar → Metin okuma (TTS) çıkışı</b>: “Google Konuşma Hizmetleri” seçili ve Türkçe ses indirilmiş mi? Sonra ▶'ye tekrar basın.</div>`
     :!TTS?`<div class="lwarn">Bu tarayıcı sesli okumayı desteklemiyor. Bilgisayarda <b>Microsoft Edge</b> veya Chrome ile açın.</div>`
     :!vs.length?`<div class="lwarn">Bu tarayıcıda <b>Türkçe ses</b> bulunamadı; okuma bozuk çıkabilir. Bilgisayarda en iyi sonuç <b>Microsoft Edge</b> ile alınır (Emel / Ahmet doğal sesleri).</div>`:"";
   if(!L.q.length){app.innerHTML=`<div class="screen empty"><div class="big">✦</div><p>${T.src==="wrong"?"Bu bölümde yanlışın yok. Kaynağı “Seçili bölüm” yap.":"Bu bölümde soru yok."}</p></div>${sets}`;updateSub();return;}
@@ -4545,7 +4580,7 @@ function renderListen(){
     <div class="qmeta"><span class="qnum">Soru ${L.i+1} / ${L.q.length}</span><span class="utag">${gname(q.u)}</span></div>
     <div class="card ${L.playing?"live":""}"><p class="qtext">${q.q}</p>${opts}${ans&&q.ex?`<div class="explain ok">${q.ex}</div>`:""}</div>
     ${warn}${sets}
-    <p class="lnote">Soru ve şıklar okunur, düşünme süresi kadar beklenir, sonra cevap söylenir ve sıradaki soruya geçilir. Sekme arka planda kalsa da okumaya devam eder. Durdurup devam edince o soru baştan okunur. Kısayollar: <b>Boşluk</b> başlat/durdur, <b>← →</b> önceki/sonraki.</p></div>`;
+    <p class="lnote">Soru ve şıklar okunur, düşünme süresi kadar beklenir, sonra cevap söylenir ve sıradaki soruya geçilir. Sekme arka planda kalsa da okumaya devam eder${useRec()?"; kayıtlı seste telefon ekranı kilitliyken de çalar (kilit ekranından durdur / sonraki)":""}. Durdurup devam edince o soru baştan okunur. Kısayollar: <b>Boşluk</b> başlat/durdur, <b>← →</b> önceki/sonraki.</p></div>`;
   updateSub();
 }
 if(TTS&&TTS.addEventListener)TTS.addEventListener("voiceschanged",()=>{if(mode==="listen"&&!L.playing)renderListen();});
@@ -4554,7 +4589,7 @@ document.addEventListener("keydown",e=>{if(mode!=="listen"||/INPUT|SELECT|TEXTAR
 
 /* v4.5 otomatik güncelleme: telefon eski sayfayı önbellekten açabiliyor. version.txt (birkaç bayt) önbelleksiz okunur;
    açılışta yeni sürüm varsa sayfa ?v= ile yenilenir, uygulamaya geri dönülünce (test yarıda kalmasın diye) üstte "Güncelle" şeridi çıkar. */
-const VER="v4.10";
+const VER="v5.0";
 function checkUpdate(auto){
   if(!/^https?:/.test(location.protocol))return;
   fetch("version.txt?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.text():"").then(t=>{

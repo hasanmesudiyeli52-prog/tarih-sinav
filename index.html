@@ -156,11 +156,11 @@
   <input type="password" id="pw" placeholder="Şifre" aria-label="Şifre">
   <div class="err" id="pwErr"></div>
   <button class="btn primary" type="submit">Giriş</button>
-  <span class="ver">v4.6</span>
+  <span class="ver">v4.7</span>
 </form></div>
 <div class="wrap">
   <header>
-    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v4.6</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
+    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v4.7</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
     <h1 id="title"></h1>
     <div class="sub" id="sub"></div>
     <div class="course"><select id="course" aria-label="Ders seç"></select></div>
@@ -177,7 +177,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v4.6
+   TARİH SINAV HAZIRLIK — v4.7
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).
@@ -4457,6 +4457,7 @@ const ROMC={I:"bir",II:"iki",III:"üç",IV:"dört",V:"beş",VI:"altı",VII:"yedi
 const NL="A-Za-zÇĞİÖŞÜçğıöşüÂÎÛâîû";
 function clean(h){const d=document.createElement("div");d.innerHTML=h;let s=d.textContent||"";
   s=s.replace(/M\.\s?Ö\./g,"milattan önce").replace(/M\.\s?S\./g,"milattan sonra").replace(/(\d+)\s*\.?\s*yy\.?/g,"$1. yüzyıl").replace(/\bvb\./g,"ve benzeri").replace(/\bvs\./g,"vesaire");
+  s=s.replace(/(^|[^\p{L}])[Hh]z\.\s*/gu,"$1Hazreti ").replace(/(\s)b\.\s*(?=\p{Lu})/gu,"$1bin ");   /* Hz. Ali → Hazreti Ali; Ahmed b. Tolun → Ahmed bin Tolun */
   s=s.replace(new RegExp("(^|[^"+NL+"])([IVX]{1,5})\\.(?=\\s|$|[A-ZÇĞİÖŞÜ])","g"),(m,a,r)=>a+(ROMO[r]?ROMO[r]+" ":m.slice(a.length)));   /* II. Mehmed → ikinci Mehmed */
   s=s.replace(new RegExp("(^|[^"+NL+"])([IVX]{1,4})(?=$|[^"+NL+".])","g"),(m,a,r)=>a+(ROMC[r]||r));                          /* I ve III → bir ve üç */
   return s.replace(/_{2,}|\.{4,}|…+/g," boşluk ").replace(/\s+/g," ").trim();}
@@ -4539,7 +4540,7 @@ document.addEventListener("keydown",e=>{if(mode!=="listen"||/INPUT|SELECT|TEXTAR
 
 /* v4.5 otomatik güncelleme: telefon eski sayfayı önbellekten açabiliyor. version.txt (birkaç bayt) önbelleksiz okunur;
    açılışta yeni sürüm varsa sayfa ?v= ile yenilenir, uygulamaya geri dönülünce (test yarıda kalmasın diye) üstte "Güncelle" şeridi çıkar. */
-const VER="v4.6";
+const VER="v4.7";
 function checkUpdate(auto){
   if(!/^https?:/.test(location.protocol))return;
   fetch("version.txt?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.text():"").then(t=>{

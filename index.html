@@ -156,11 +156,11 @@
   <input type="password" id="pw" placeholder="Şifre" aria-label="Şifre">
   <div class="err" id="pwErr"></div>
   <button class="btn primary" type="submit">Giriş</button>
-  <span class="ver">v5.1</span>
+  <span class="ver">v5.2</span>
 </form></div>
 <div class="wrap">
   <header>
-    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v5.1</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
+    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v5.2</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
     <h1 id="title"></h1>
     <div class="sub" id="sub"></div>
     <div class="course"><select id="course" aria-label="Ders seç"></select></div>
@@ -177,7 +177,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v5.1
+   TARİH SINAV HAZIRLIK — v5.2
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).
@@ -4450,6 +4450,17 @@ if(!saved.heard||typeof saved.heard!=="object")saved.heard={};
 let L={sig:"",q:[],i:0,playing:false,phase:"q",token:0,blocked:0,err:false};
 let actx=null;
 function lPool(){return saved.tts.src==="wrong"?wrongList():pool();}
+/* v5.2: dersin bütün soruları dinlenince aynı ders baştan başlamaz, sıradaki derse geçilir (aynı sekme; son dersten sonra ilk derse) */
+function lNextCourse(){
+  if(lPool().some(q=>!saved.heard[q.k]))return;
+  const u0=unit<0?unit:-1,i0=COURSES.findIndex(c=>c.id===course);
+  for(let s=1;s<=COURSES.length;s++){
+    const c=COURSES[(i0+s)%COURSES.length];course=c.id;unit=u0;
+    if(lPool().length)break;
+  }
+  saved.course=course;save();courseEl.value=course;startRound();renderHeader();renderUnits();
+  L.sig=course+"|"+unit+"|"+saved.tts.src;
+}
 function lBuild(){const p=lPool();let fresh=p.filter(q=>!saved.heard[q.k]);if(!fresh.length){p.forEach(q=>delete saved.heard[q.k]);save();fresh=p;}L.q=shuffle(fresh.map(q=>q.id));L.i=0;L.phase="q";}
 function trVoices(){if(!TTS)return[];const n=v=>/natural|online|neural/i.test(v.name)?1:0;return TTS.getVoices().filter(v=>/^tr/i.test(v.lang)).sort((a,b)=>n(b)-n(a));}
 function voiceObj(){const vs=trVoices();return vs.find(v=>v.name===saved.tts.voice)||vs[0]||null;}
@@ -4545,7 +4556,7 @@ async function lPlay(){
   if(rec){if(!AU){AU=new Audio();AU.preload="auto";AU.setAttribute("playsinline","");}AU.src=SIL_URL;const p=AU.play();if(p&&p.catch)p.catch(()=>{});}   /* dokunuş içinde kilit aç */
   else{try{const w=new SpeechSynthesisUtterance(" ");w.volume=0;w.lang="tr-TR";L.w=w;TTS.speak(w);}catch(e){}if(TTS.paused)TTS.resume();}
   while(tok===L.token){
-    if(L.i>=L.q.length){lBuild();if(!L.q.length)break;}
+    if(L.i>=L.q.length){lNextCourse();lBuild();if(!L.q.length)break;}
     const q=BYID[L.q[L.i]];L.phase="q";renderListen();mediaSession(q);
     const r=rec&&REC.q[q.k];
     if(r){if(!await recQuestion(q,r,tok))return;saved.heard[q.k]=1;save();updateSub();L.i++;continue;}
@@ -4606,7 +4617,7 @@ document.addEventListener("keydown",e=>{if(mode!=="listen"||/INPUT|SELECT|TEXTAR
 
 /* v4.5 otomatik güncelleme: telefon eski sayfayı önbellekten açabiliyor. version.txt (birkaç bayt) önbelleksiz okunur;
    açılışta yeni sürüm varsa sayfa ?v= ile yenilenir, uygulamaya geri dönülünce (test yarıda kalmasın diye) üstte "Güncelle" şeridi çıkar. */
-const VER="v5.1";
+const VER="v5.2";
 function checkUpdate(auto){
   if(!/^https?:/.test(location.protocol))return;
   fetch("version.txt?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.text():"").then(t=>{

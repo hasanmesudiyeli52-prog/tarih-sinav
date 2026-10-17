@@ -156,11 +156,11 @@
   <input type="password" id="pw" placeholder="Şifre" aria-label="Şifre">
   <div class="err" id="pwErr"></div>
   <button class="btn primary" type="submit">Giriş</button>
-  <span class="ver">v5.0</span>
+  <span class="ver">v5.1</span>
 </form></div>
 <div class="wrap">
   <header>
-    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v5.0</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
+    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v5.1</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
     <h1 id="title"></h1>
     <div class="sub" id="sub"></div>
     <div class="course"><select id="course" aria-label="Ders seç"></select></div>
@@ -177,7 +177,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v5.0
+   TARİH SINAV HAZIRLIK — v5.1
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).
@@ -4498,23 +4498,40 @@ const SIL_URL=URL.createObjectURL(new Blob([(()=>{const b=new Uint8Array(144*20)
 function recLoad(){if(REC!==null)return;REC=false;fetch("audio/index.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(j=>{if(j&&j.q){REC=j;if(mode==="listen"&&!L.playing)renderListen();}}).catch(()=>{});}
 function hasNatural(){return trVoices().some(v=>/natural|online|neural/i.test(v.name));}
 function useRec(){return !!REC&&(saved.tts.voice==="__rec"||saved.tts.voice===""||!TTS);}
-function recSeg(fi,a,b,tok){return new Promise(res=>{
-  const url="audio/"+REC.files[fi],F=REC.frame,t0=a*F,t1=b*F+0.1;let done=false,iv=0,last=-1,still=0;
-  const fin=ok=>{if(done)return;done=true;clearInterval(iv);AU.removeEventListener("timeupdate",chk);AU.removeEventListener("error",bad);res(ok&&tok===L.token);};
-  const chk=()=>{if(tok!==L.token)return fin(false);if(AU.currentTime>=t1)fin(true);};
-  const bad=()=>{if(tok===L.token){L.err=true;lStop();renderListen();}fin(false);};
-  AU.addEventListener("timeupdate",chk);AU.addEventListener("error",bad);
-  const go=()=>{try{AU.currentTime=t0;}catch(e){}AU.playbackRate=saved.tts.rate;const p=AU.play();if(p&&p.catch)p.catch(e=>{if(e&&e.name==="NotAllowedError")bad();});};
-  if(AU.src.indexOf(url)<0){AU.src=url;AU.addEventListener("loadedmetadata",go,{once:true});AU.load();}else go();
-  iv=setInterval(()=>{chk();if(done)return;still=AU.currentTime===last?still+1:0;last=AU.currentTime;if(still>400)bad();},50);   /* 20 sn ilerlemiyorsa: ağ/izin sorunu */
-});}
+/* v5.1: telefonda paketten pakete atlamak her soruda ağ beklemesi yapıyordu → her soru tek küçük parça (soru+şıklar, düşünme
+   sessizliği, cevap, ara) olarak Range ile indirilip Blob'dan çalınır; sıradaki soru okunurken önceden indirilir. */
+const RB=new Map();
+function recSig(q){return q.k+"|"+saved.tts.opts+"|"+saved.tts.wait+"|"+saved.tts.rate;}
+function recBlob(q){
+  const sig=recSig(q);if(RB.has(sig))return RB.get(sig);
+  const r=REC.q[q.k],F=144,qe=saved.tts.opts&&r[4]?r[4]:r[2],ae=r[8]||r[6];
+  const sil=n=>{const b=new Uint8Array(F*Math.max(1,n));for(let i=0;i<b.length;i+=F)b.set([0xff,0xf3,0x64,0xc4],i);return b;};
+  const fr=s=>Math.round(s*saved.tts.rate/REC.frame);
+  const p=fetch("audio/"+REC.files[r[0]],{headers:{Range:`bytes=${r[1]*F}-${ae*F-1}`}}).then(x=>{if(!x.ok)throw 0;return x.arrayBuffer().then(buf=>({buf,full:x.status===200}));}).then(({buf,full})=>{
+    const u=new Uint8Array(buf),o=full?0:r[1]*F,cut=(a,b)=>u.subarray(a*F-o,b*F-o);
+    const w=saved.tts.wait?sil(fr(saved.tts.wait)):new Uint8Array(0),parts=[cut(r[1],qe),w,cut(r[5],ae),sil(fr(1.3))];
+    const ansT=(qe-r[1]+w.length/F)*REC.frame;
+    return {url:URL.createObjectURL(new Blob(parts,{type:"audio/mpeg"})),ansT};
+  });
+  p.catch(()=>RB.delete(sig));RB.set(sig,p);
+  while(RB.size>4){const [k,v]=RB.entries().next().value;RB.delete(k);v.then(x=>setTimeout(()=>URL.revokeObjectURL(x.url),60000),()=>{});}
+  return p;
+}
+function recPrefetch(){const n=L.q[L.i+1],q=n!=null&&BYID[n];if(q&&REC.q[q.k])recBlob(q);}
 async function recQuestion(q,r,tok){
-  const fr=s=>Math.max(1,Math.round(s*saved.tts.rate/REC.frame));
-  if(!await recSeg(r[0],r[1],saved.tts.opts&&r[4]?r[4]:r[2],tok))return false;         /* soru (+ şıklar, arada boşlukla kesintisiz) */
-  if(saved.tts.wait&&!await recSeg(r[0],0,fr(saved.tts.wait),tok))return false;            /* düşünme: paket başı sessizlik */
-  L.phase="a";renderListen();
-  if(!await recSeg(r[0],r[5],r[8]||r[6],tok))return false;                                 /* cevap (+ açıklama) */
-  return await recSeg(r[0],0,fr(1.3),tok);
+  let b;try{b=await recBlob(q);}catch(e){if(tok===L.token){L.err=true;lStop();renderListen();}return false;}
+  if(tok!==L.token)return false;
+  recPrefetch();
+  return new Promise(res=>{
+    let done=false,last=-1,still=0,iv=0;
+    const fin=ok=>{if(done)return;done=true;clearInterval(iv);AU.onended=AU.ontimeupdate=AU.onerror=null;res(ok&&tok===L.token);};
+    const bad=()=>{if(tok===L.token){L.err=true;lStop();renderListen();}fin(false);};
+    AU.ontimeupdate=()=>{if(tok!==L.token)return fin(false);if(L.phase!=="a"&&AU.currentTime>=b.ansT){L.phase="a";renderListen();}};
+    AU.onended=()=>fin(true);AU.onerror=bad;
+    AU.defaultPlaybackRate=saved.tts.rate;AU.src=b.url;AU.playbackRate=saved.tts.rate;
+    const p=AU.play();if(p&&p.catch)p.catch(e=>{if(e&&e.name==="NotAllowedError")bad();});
+    iv=setInterval(()=>{if(tok!==L.token)return fin(false);if(done)return;if(AU.paused&&AU.ended)return fin(true);still=AU.currentTime===last?still+1:0;last=AU.currentTime;if(still>400)bad();},50);
+  });
 }
 function mediaSession(q){try{if(!("mediaSession" in navigator))return;navigator.mediaSession.metadata=new MediaMetadata({title:`Soru ${L.i+1} / ${L.q.length}`,artist:C().name||"Tarih Sınav",album:"Dinle"});
   const ms=navigator.mediaSession;ms.setActionHandler("play",()=>{if(!L.playing)lPlay();});ms.setActionHandler("pause",()=>{lStop();renderListen();});ms.setActionHandler("nexttrack",()=>lJump(1));ms.setActionHandler("previoustrack",()=>lJump(-1));}catch(e){}}
@@ -4589,7 +4606,7 @@ document.addEventListener("keydown",e=>{if(mode!=="listen"||/INPUT|SELECT|TEXTAR
 
 /* v4.5 otomatik güncelleme: telefon eski sayfayı önbellekten açabiliyor. version.txt (birkaç bayt) önbelleksiz okunur;
    açılışta yeni sürüm varsa sayfa ?v= ile yenilenir, uygulamaya geri dönülünce (test yarıda kalmasın diye) üstte "Güncelle" şeridi çıkar. */
-const VER="v5.0";
+const VER="v5.1";
 function checkUpdate(auto){
   if(!/^https?:/.test(location.protocol))return;
   fetch("version.txt?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.text():"").then(t=>{

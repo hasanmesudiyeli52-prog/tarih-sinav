@@ -176,11 +176,11 @@
   <input type="password" id="pw" placeholder="Şifre" aria-label="Şifre">
   <div class="err" id="pwErr"></div>
   <button class="btn primary" type="submit">Giriş</button>
-  <span class="ver">v5.11</span>
+  <span class="ver">v5.12</span>
 </form></div>
 <div class="wrap">
   <header>
-    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v5.11</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
+    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v5.12</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
     <h1 id="title"></h1>
     <div class="sub" id="sub"></div>
     <div class="course"><select id="course" aria-label="Ders seç"></select></div>
@@ -198,7 +198,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v5.11
+   TARİH SINAV HAZIRLIK — v5.12
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).
@@ -5146,7 +5146,32 @@ let dupArmed=false;
 function renderFbar(){const p=coursePool(),kn=p.filter(q=>saved.known[q.k]&&!saved.dup[q.k]).length,dp=p.filter(q=>saved.dup[q.k]).length,f=saved.flt;
   fbarEl.innerHTML=`<span>Sorular</span><button data-f="all" class="${f==="all"?"on":""}">Tümü</button><button data-f="unknown" class="${f==="unknown"?"on":""}">Bilmediklerim</button><button data-f="known" class="${f==="known"?"on":""}">Bildiklerim</button>`
     +`<em>✓ ${kn} bildiğim${dp?` · ⧉ ${dp} mükerrer <button class="lnk" onclick="restoreDup(this)">geri getir</button>`:""}</em>`;
-  fbarEl.querySelectorAll("button[data-f]").forEach(b=>b.onclick=()=>{if(saved.flt===b.dataset.f)return;saved.flt=b.dataset.f;save();startRound();L.sig="";render();});}
+  fbarEl.querySelectorAll("button[data-f]").forEach(b=>b.onclick=()=>setFlt(b.dataset.f));}
+/* v5.12: her filtre (Tümü / Bilmediklerim / Bildiklerim) kendi yerini hatırlar: ders, bölüm, Dinle'de kalınan soru, test turu.
+   Örn. Bilmediklerim'de Diplomasi'deyken Bildiklerim'e geçip orada başka derse ilerlesen de, Bilmediklerim'e dönünce Diplomasi'de kaldığın sorudan sürer. */
+if(!saved.fpos||typeof saved.fpos!=="object")saved.fpos={};
+const FMEM={};let LPREF=null;
+function lCurId(){return L.q.length&&L.i<L.q.length?L.q[L.i]:null;}
+function setFlt(f){
+  if(saved.flt===f)return;
+  const o=saved.flt;lStop();
+  saved.fpos[o]={c:course,u:unit,cur:lCurId()};
+  FMEM[o]={c:course,u:unit,order:order.slice(),idx,answers:Object.assign({},answers),answered:Object.assign({},answered),lq:L.q.slice(),li:L.i,lsig:L.sig};
+  saved.flt=f;
+  const p=saved.fpos[f];
+  if(p&&COURSES.some(c=>c.id===p.c)){course=p.c;unit=p.u;saved.course=course;courseEl.value=course;}
+  save();
+  const m=FMEM[f],same=m&&m.c===course&&m.u===unit;
+  if(same){const ok=id=>BYID[id]&&visible(BYID[id]);
+    const cur=m.order[m.idx];order=m.order.filter(ok);answers=m.answers;answered=m.answered;
+    idx=Math.max(0,order.indexOf(cur));if(!order.length)startRound();}
+  else startRound();
+  if(same&&m.lsig===course+"|"+unit+"|"+saved.tts.src&&m.lq.length){
+    const cur=m.lq[m.li];L.q=m.lq.filter(id=>BYID[id]&&visible(BYID[id]));
+    const i=L.q.indexOf(cur);L.i=i>=0?i:Math.min(m.li,Math.max(0,L.q.length-1));L.phase="q";L.sig=m.lsig;
+    if(!L.q.length)L.sig="";}
+  else{L.sig="";LPREF=p?p.cur:null;}
+  renderHeader();renderUnits();render();}
 function restoreDup(btn){if(!dupArmed){dupArmed=true;btn.textContent="emin misin? tekrar dokun";setTimeout(()=>{dupArmed=false;if(btn.isConnected)btn.textContent="geri getir";},3500);return;}
   dupArmed=false;coursePool().forEach(q=>delete saved.dup[q.k]);save();startRound();L.sig="";render();}
 
@@ -5224,7 +5249,9 @@ function lNextCourse(){
   saved.course=course;save();courseEl.value=course;startRound();renderHeader();renderUnits();
   L.sig=course+"|"+unit+"|"+saved.tts.src;
 }
-function lBuild(){const p=lPool();let fresh=p.filter(q=>!saved.heard[q.k]);if(!fresh.length){p.forEach(q=>delete saved.heard[q.k]);save();fresh=p;}L.q=shuffle(fresh.map(q=>q.id));L.i=0;L.phase="q";}
+function lBuild(){const p=lPool();let fresh=p.filter(q=>!saved.heard[q.k]);if(!fresh.length){p.forEach(q=>delete saved.heard[q.k]);save();fresh=p;}L.q=shuffle(fresh.map(q=>q.id));
+  if(LPREF!=null){const j=L.q.indexOf(LPREF);if(j>0){L.q.splice(j,1);L.q.unshift(LPREF);}LPREF=null;}   /* v5.12: filtreye dönünce kaldığın soru ilk gelir */
+  L.i=0;L.phase="q";}
 function trVoices(){if(!TTS)return[];const n=v=>/natural|online|neural/i.test(v.name)?1:0;return TTS.getVoices().filter(v=>/^tr/i.test(v.lang)).sort((a,b)=>n(b)-n(a));}
 function voiceObj(){const vs=trVoices();return vs.find(v=>v.name===saved.tts.voice)||vs[0]||null;}
 const ROMO={I:"birinci",II:"ikinci",III:"üçüncü",IV:"dördüncü",V:"beşinci",VI:"altıncı",VII:"yedinci",VIII:"sekizinci",IX:"dokuzuncu",X:"onuncu",XI:"on birinci",XII:"on ikinci",XIII:"on üçüncü",XIV:"on dördüncü",XV:"on beşinci",XVI:"on altıncı",XVII:"on yedinci",XVIII:"on sekizinci",XIX:"on dokuzuncu",XX:"yirminci"};
@@ -5428,7 +5455,7 @@ document.addEventListener("keyup",e=>{if(e.key==="ArrowDown"&&mode==="listen")re
 
 /* v4.5 otomatik güncelleme: telefon eski sayfayı önbellekten açabiliyor. version.txt (birkaç bayt) önbelleksiz okunur;
    açılışta yeni sürüm varsa sayfa ?v= ile yenilenir, uygulamaya geri dönülünce (test yarıda kalmasın diye) üstte "Güncelle" şeridi çıkar. */
-const VER="v5.11";
+const VER="v5.12";
 function checkUpdate(auto){
   if(!/^https?:/.test(location.protocol))return;
   fetch("version.txt?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.text():"").then(t=>{

@@ -176,11 +176,11 @@
   <input type="password" id="pw" placeholder="Şifre" aria-label="Şifre">
   <div class="err" id="pwErr"></div>
   <button class="btn primary" type="submit">Giriş</button>
-  <span class="ver">v5.12</span>
+  <span class="ver">v5.13</span>
 </form></div>
 <div class="wrap">
   <header>
-    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v5.12</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
+    <div class="toprow"><div><span class="kicker" id="kicker"></span><span class="ver">v5.13</span></div><button class="refresh" onclick="yenile()">↻ Yenile</button></div>
     <h1 id="title"></h1>
     <div class="sub" id="sub"></div>
     <div class="course"><select id="course" aria-label="Ders seç"></select></div>
@@ -198,7 +198,7 @@
 
 <script>
 /* =====================================================================
-   TARİH SINAV HAZIRLIK — v5.12
+   TARİH SINAV HAZIRLIK — v5.13
    Dersler: 4. sınıf 9 ders (vize + final/büt).
    Vize soruları: Auzef Tarih Telegram grubundaki çıkmış sınavlar
    (2025-26 cevaplı vizeler, 2022 vizeleri cevap anahtarlı, eski yıllar).
@@ -5026,8 +5026,27 @@ const BYID={},BYK={};QUESTIONS.forEach(q=>{BYID[q.id]=q;let h=5381;const s=q.d+"
 /* kalıcı kayıt: son ders + yanlışlar (telefonda kapatıp açınca kalır) */
 const LS="tarih-sinav-v3";
 let saved={course:null,wrong:{},seen:{}};
-try{const s=JSON.parse(localStorage.getItem(LS)||"null");if(s&&typeof s==="object")saved=Object.assign(saved,s);}catch(e){}
-function save(){try{localStorage.setItem(LS,JSON.stringify(saved));}catch(e){}}
+let LSRAW=null;
+try{LSRAW=localStorage.getItem(LS);const s=JSON.parse(LSRAW||"null");if(s&&typeof s==="object")saved=Object.assign(saved,s);}catch(e){}
+/* v5.13: sayfa iki sekmede açıksa (ör. Telegram'dan link tekrar açılınca) arkadaki eski sekme kaydederken
+   öbür sekmede işaretlenen "Biliyorum"ları siliyordu. Artık kaydederken diskteki kayıtla birleştirilir:
+   bu sekmede değişen anahtar bu sekmeden, değişmeyen diskten alınır. */
+let BASE=JSON.parse(JSON.stringify(saved));
+const J=x=>JSON.stringify(x),isObj=x=>!!x&&typeof x==="object"&&!Array.isArray(x);
+function merge3(b,m,c){const r={},ks=new Set([...Object.keys(b),...Object.keys(m),...Object.keys(c)]);
+  ks.forEach(k=>{const bv=b[k],mv=m[k],cv=c[k];let v;
+    if(J(mv)===J(bv))v=cv;else if(J(cv)===J(bv))v=mv;else if(isObj(mv)&&isObj(cv))v=merge3(isObj(bv)?bv:{},mv,cv);else v=mv;
+    if(v!==undefined)r[k]=v;});return r;}
+function save(){try{const raw=localStorage.getItem(LS);
+  if(raw&&raw!==LSRAW){const cur=JSON.parse(raw);if(isObj(cur))saved=merge3(BASE,saved,cur);}
+  const out=JSON.stringify(saved);localStorage.setItem(LS,out);LSRAW=out;BASE=JSON.parse(out);}catch(e){}}
+function syncIn(){try{const raw=localStorage.getItem(LS);if(!raw||raw===LSRAW)return;const cur=JSON.parse(raw);if(!isObj(cur))return;
+  saved=merge3(BASE,saved,cur);LSRAW=raw;BASE=JSON.parse(raw);   /* ayrı kopya: saved ile aynı nesneyi paylaşmasın */
+  if(mode==="test"){const c=order[idx];order=order.filter(id=>id===c||answered[id]||visible(BYID[id]));idx=Math.max(0,order.indexOf(c));}
+  renderFbar();updateSub();}catch(e){}}
+window.addEventListener("storage",e=>{if(e.key===LS)syncIn();});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncIn();});
+window.addEventListener("pageshow",()=>syncIn());
 if(saved.course&&COURSES.some(c=>c.id===saved.course))course=saved.course;
 if(!saved.seen||typeof saved.seen!=="object")saved.seen={};
 /* v5.9: known = "Biliyorum" işaretlediklerim, dup = "Mükerrer" işaretlediklerim (hiç gelmez), flt = "all" | "unknown" (bildiklerim gelmesin) */
@@ -5131,6 +5150,9 @@ function toggleKnown(k,btn){
   const gone=BYK[k]&&!visible(BYK[k]);
   if(gone&&mode==="listen"){lDropCurrent();renderFbar();return;}
   if(gone&&(mode==="study"||mode==="review")){const it=btn.closest(".study-item");if(it)it.remove();renderFbar();updateSub();return;}
+  if(gone&&mode==="test"){const q=BYK[k],i=q?order.indexOf(q.id):-1;   /* v5.13: testte de turdan çıkar (‹ geri gelince yeniden görünmesin) */
+    if(i>=0){order.splice(i,1);delete answers[q.id];delete answered[q.id];if(idx>=order.length)idx=Math.max(0,order.length-1);}
+    if(!order.length)startRound();renderTest();renderFbar();updateSub();return;}
   btn.classList.toggle("on",on);btn.textContent=on?"✓ Biliyorum (işaretli)":"✓ Biliyorum";renderFbar();updateSub();}
 function markDup(k,btn){
   saved.dup[k]=1;save();
@@ -5455,7 +5477,7 @@ document.addEventListener("keyup",e=>{if(e.key==="ArrowDown"&&mode==="listen")re
 
 /* v4.5 otomatik güncelleme: telefon eski sayfayı önbellekten açabiliyor. version.txt (birkaç bayt) önbelleksiz okunur;
    açılışta yeni sürüm varsa sayfa ?v= ile yenilenir, uygulamaya geri dönülünce (test yarıda kalmasın diye) üstte "Güncelle" şeridi çıkar. */
-const VER="v5.12";
+const VER="v5.13";
 function checkUpdate(auto){
   if(!/^https?:/.test(location.protocol))return;
   fetch("version.txt?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.text():"").then(t=>{
